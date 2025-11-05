@@ -6,10 +6,10 @@ import pandas as pd
 # ⚙️ Configuration API
 # ---------------------------
 API_KEY = "94ab52893fe364d9bf5362dc7b752213"  # 🔑 Remplace par ta clé TheOddsAPI
-REGION = "eu"               # Marché européen
-MARKET = "h2h"              # Marché : 1X2 (Head to Head)
+REGION = "eu"
+MARKET = "h2h"
 
-# Dictionnaire des championnats disponibles
+# Dictionnaire des championnats
 CHAMPIONNATS = {
     "🇫🇷 Ligue 1": "soccer_france_ligue_one",
     "🏴 Premier League": "soccer_epl",
@@ -19,9 +19,9 @@ CHAMPIONNATS = {
 # ---------------------------
 # 🖥️ Interface Streamlit
 # ---------------------------
-st.set_page_config(page_title="Analyse Multi-Championnats", page_icon="⚽", layout="centered")
+st.set_page_config(page_title="Analyse Cotes 1.4 - 1.6", page_icon="⚽", layout="centered")
 
-st.title("⚽ Analyse automatique des matchs et cotes (multi-championnats)")
+st.title("⚽ Analyse automatique des matchs (cotes entre 1.4 et 1.6)")
 st.caption("Les données proviennent de TheOddsAPI. Sélectionne ton championnat et lance l’analyse !")
 
 # Menu déroulant
@@ -31,7 +31,7 @@ SPORT = CHAMPIONNATS[championnat_nom]
 # ---------------------------
 # 🔘 Récupération des données
 # ---------------------------
-if st.button("Récupérer les matchs et analyser ⚡"):
+if st.button("Récupérer et analyser ⚡"):
 
     url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?apiKey={API_KEY}&regions={REGION}&markets={MARKET}"
     response = requests.get(url)
@@ -48,7 +48,6 @@ if st.button("Récupérer les matchs et analyser ⚡"):
             toutes_cotes_A = []
             toutes_cotes_B = []
 
-            # Parcourir les bookmakers disponibles
             for bookmaker in match["bookmakers"]:
                 try:
                     outcomes = bookmaker["markets"][0]["outcomes"]
@@ -61,24 +60,21 @@ if st.button("Récupérer les matchs et analyser ⚡"):
                     continue
 
             if toutes_cotes_A and toutes_cotes_B:
-                meilleure_cote_A = max(toutes_cotes_A)
-                meilleure_cote_B = max(toutes_cotes_B)
                 moyenne_cote_A = sum(toutes_cotes_A) / len(toutes_cotes_A)
                 moyenne_cote_B = sum(toutes_cotes_B) / len(toutes_cotes_B)
-                nb_bookmakers = len(match["bookmakers"])
 
-                matchs.append({
-                    "Equipe": equipeA,
-                    "Adversaire": equipeB,
-                    "Nb_bookmakers": nb_bookmakers,
-                    "Cote_max_A": round(meilleure_cote_A, 2),
-                    "Cote_max_B": round(meilleure_cote_B, 2),
-                    "Cote_moy_A": round(moyenne_cote_A, 2),
-                    "Cote_moy_B": round(moyenne_cote_B, 2)
-                })
+                # 👉 Filtrer les cotes comprises entre 1.4 et 1.6
+                if 1.4 <= moyenne_cote_A <= 1.6 or 1.4 <= moyenne_cote_B <= 1.6:
+                    matchs.append({
+                        "Equipe": equipeA,
+                        "Adversaire": equipeB,
+                        "Cote_moy_A": round(moyenne_cote_A, 2),
+                        "Cote_moy_B": round(moyenne_cote_B, 2),
+                        "Nb_bookmakers": len(match["bookmakers"])
+                    })
 
         if not matchs:
-            st.warning(f"Aucun match trouvé pour {championnat_nom}. Essaie un autre championnat.")
+            st.warning("⚠️ Aucun match trouvé avec des cotes entre 1.4 et 1.6.")
         else:
             df = pd.DataFrame(matchs)
 
@@ -86,34 +82,32 @@ if st.button("Récupérer les matchs et analyser ⚡"):
             # 📊 Analyse automatique
             # ---------------------------
             df["Probabilité_estimee_A"] = round((1 / df["Cote_moy_A"]) * 100, 1)
-            df["Note_confiance_A"] = round(df["Probabilité_estimee_A"] / df["Cote_moy_A"], 1)
-            df["Recommandation"] = df["Probabilité_estimee_A"].apply(lambda x: "✅ Oui" if x >= 70 else "❌ Non")
-
-            df = df.sort_values(by="Note_confiance_A", ascending=False)
-            df["Classement"] = range(1, len(df)+1)
+            df["Note_confiance"] = round(df["Probabilité_estimee_A"] / df["Cote_moy_A"], 1)
+            df = df.sort_values(by="Note_confiance", ascending=False)
+            df["Classement"] = range(1, len(df) + 1)
 
             # ---------------------------
             # 🎨 Affichage
             # ---------------------------
-            st.success(f"✅ Analyse terminée pour {championnat_nom} ! Voici les matchs les plus sûrs :")
+            st.success(f"✅ {len(df)} matchs trouvés avec des cotes entre 1.4 et 1.6 ({championnat_nom})")
 
             def color_rows(row):
-                return ['background-color: #b6f0b6' if row["Recommandation"] == "✅ Oui" else 'background-color: #f4b6b6']*len(row)
+                return ['background-color: #b6f0b6' if 1.4 <= row["Cote_moy_A"] <= 1.6 else 'background-color: #f4b6b6'] * len(row)
 
             st.dataframe(df[[
-                "Classement","Equipe","Adversaire","Nb_bookmakers",
-                "Cote_max_A","Cote_moy_A","Probabilité_estimee_A","Note_confiance_A","Recommandation"
+                "Classement","Equipe","Adversaire","Nb_bookmakers","Cote_moy_A","Cote_moy_B",
+                "Probabilité_estimee_A","Note_confiance"
             ]].style.apply(color_rows, axis=1), use_container_width=True)
 
             # ---------------------------
             # 💾 Export CSV
             # ---------------------------
             st.download_button(
-                "📥 Télécharger les résultats en CSV",
+                "📥 Télécharger le tableau (CSV)",
                 df.to_csv(index=False).encode("utf-8"),
-                f"classement_{championnat_nom.replace(' ', '_')}.csv",
+                f"matchs_cotes_1_4_1_6_{championnat_nom.replace(' ', '_')}.csv",
                 "text/csv"
             )
 
-            st.caption("Analyse basée sur la moyenne et la meilleure cote disponible parmi les bookmakers.")
+
 
