@@ -1,15 +1,15 @@
 import streamlit as st
 import requests
 import pandas as pd
+from datetime import datetime, timedelta
 
 # ---------------------------
-# ⚙️ Configuration API
+# ⚙️ Config API
 # ---------------------------
-API_KEY = "94ab52893fe364d9bf5362dc7b752213"  # 🔑 Remplace par ta clé TheOddsAPI
+API_KEY = "94ab52893fe364d9bf5362dc7b752213"  # Remplace par ta clé TheOddsAPI
 REGION = "eu"
 MARKET = "h2h"
 
-# Dictionnaire des championnats
 CHAMPIONNATS = {
     "🇫🇷 Ligue 1": "soccer_france_ligue_one",
     "🏴 Premier League": "soccer_epl",
@@ -17,97 +17,86 @@ CHAMPIONNATS = {
 }
 
 # ---------------------------
-# 🖥️ Interface Streamlit
+# 🖥️ Interface
 # ---------------------------
-st.set_page_config(page_title="Analyse Cotes 1.4 - 1.6", page_icon="⚽", layout="centered")
-
-st.title("⚽ Analyse automatique des matchs (cotes entre 1.4 et 1.6)")
-st.caption("Les données proviennent de TheOddsAPI. Sélectionne ton championnat et lance l’analyse !")
-
-# Menu déroulant
-championnat_nom = st.selectbox("Choisis un championnat :", list(CHAMPIONNATS.keys()))
-SPORT = CHAMPIONNATS[championnat_nom]
+st.set_page_config(page_title="Top matchs safe du week-end", page_icon="⚽", layout="centered")
+st.title("⚽ Analyse automatique : matchs safe du week-end")
+st.caption("Basée sur TheOddsAPI — Ligue 1, Premier League, La Liga")
 
 # ---------------------------
-# 🔘 Récupération des données
+# 🔘 Lancer l'analyse
 # ---------------------------
-if st.button("Récupérer et analyser ⚡"):
+if st.button("Analyser les 3 championnats ⚡"):
 
-    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?apiKey={API_KEY}&regions={REGION}&markets={MARKET}"
-    response = requests.get(url)
+    matchs_total = []
+    weekend_start = datetime.now()
+    weekend_end = weekend_start + timedelta(days=7)
 
-    if response.status_code != 200:
-        st.error(f"Erreur API : {response.status_code} - {response.text}")
-    else:
+    for nom, sport in CHAMPIONNATS.items():
+        st.info(f"🔎 Analyse de {nom}...")
+        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={API_KEY}&regions={REGION}&markets={MARKET}"
+        response = requests.get(url)
+
+        if response.status_code != 200:
+            st.warning(f"Erreur API pour {nom} ({response.status_code})")
+            continue
+
         data = response.json()
-        matchs = []
 
         for match in data:
-            equipeA = match["home_team"]
-            equipeB = match["away_team"]
-            toutes_cotes_A = []
-            toutes_cotes_B = []
-
-            for bookmaker in match["bookmakers"]:
-                try:
-                    outcomes = bookmaker["markets"][0]["outcomes"]
-                    for outcome in outcomes:
-                        if outcome["name"] == equipeA:
-                            toutes_cotes_A.append(outcome["price"])
-                        elif outcome["name"] == equipeB:
-                            toutes_cotes_B.append(outcome["price"])
-                except Exception:
+            try:
+                # Vérifie si le match est dans les 7 prochains jours
+                match_time = datetime.fromisoformat(match["commence_at"].replace("Z", "+00:00"))
+                if not (weekend_start <= match_time <= weekend_end):
                     continue
 
-            if toutes_cotes_A and toutes_cotes_B:
-                moyenne_cote_A = sum(toutes_cotes_A) / len(toutes_cotes_A)
-                moyenne_cote_B = sum(toutes_cotes_B) / len(toutes_cotes_B)
+                equipeA = match["home_team"]
+                equipeB = match["away_team"]
+                cotes = {}
 
-                # 👉 Filtrer les cotes comprises entre 1.4 et 1.6
-                if 1.4 <= moyenne_cote_A <= 1.6 or 1.4 <= moyenne_cote_B <= 1.6:
-                    matchs.append({
-                        "Equipe": equipeA,
-                        "Adversaire": equipeB,
-                        "Cote_moy_A": round(moyenne_cote_A, 2),
-                        "Cote_moy_B": round(moyenne_cote_B, 2),
-                        "Nb_bookmakers": len(match["bookmakers"])
-                    })
+                for bookmaker in match["bookmakers"]:
+                    for outcome in bookmaker["markets"][0]["outcomes"]:
+                        cotes[outcome["name"]] = cotes.get(outcome["name"], []) + [outcome["price"]]
 
-        if not matchs:
-            st.warning("⚠️ Aucun match trouvé avec des cotes entre 1.4 et 1.6.")
-        else:
-            df = pd.DataFrame(matchs)
+                if equipeA in cotes and equipeB in cotes:
+                    coteA = sum(cotes[equipeA]) / len(cotes[equipeA])
+                    coteB = sum(cotes[equipeB]) / len(cotes[equipeB])
 
-            # ---------------------------
-            # 📊 Analyse automatique
-            # ---------------------------
-            df["Probabilité_estimee_A"] = round((1 / df["Cote_moy_A"]) * 100, 1)
-            df["Note_confiance"] = round(df["Probabilité_estimee_A"] / df["Cote_moy_A"], 1)
-            df = df.sort_values(by="Note_confiance", ascending=False)
-            df["Classement"] = range(1, len(df) + 1)
+                    # Filtrage cotes entre 1.4 et 1.6
+                    if 1.4 <= coteA <= 1.6 or 1.4 <= coteB <= 1.6:
+                        winner = equipeA if coteA < coteB else equipeB
+                        cote_winner = min(coteA, coteB)
+                        prob = round((1 / cote_winner) * 100, 1)
+                        confiance = round(prob / cote_winner, 1)
 
-            # ---------------------------
-            # 🎨 Affichage
-            # ---------------------------
-            st.success(f"✅ {len(df)} matchs trouvés avec des cotes entre 1.4 et 1.6 ({championnat_nom})")
+                        matchs_total.append({
+                            "Championnat": nom,
+                            "Match": f"{equipeA} vs {equipeB}",
+                            "Winner": winner,
+                            "Cote": round(cote_winner, 2),
+                            "Probabilité": prob,
+                            "Confiance": confiance,
+                            "Date": match_time.strftime("%d/%m %Hh")
+                        })
+            except Exception:
+                continue
 
-            def color_rows(row):
-                return ['background-color: #b6f0b6' if 1.4 <= row["Cote_moy_A"] <= 1.6 else 'background-color: #f4b6b6'] * len(row)
+    # ---------------------------
+    # 📊 Résultats globaux
+    # ---------------------------
+    if not matchs_total:
+        st.warning("Aucun match trouvé avec cotes entre 1.4 et 1.6 pour le week-end à venir.")
+    else:
+        df = pd.DataFrame(matchs_total)
+        df = df.sort_values(by="Confiance", ascending=False)
+        top_df = df.head(4)
 
-            st.dataframe(df[[
-                "Classement","Equipe","Adversaire","Nb_bookmakers","Cote_moy_A","Cote_moy_B",
-                "Probabilité_estimee_A","Note_confiance"
-            ]].style.apply(color_rows, axis=1), use_container_width=True)
+        st.success("✅ Voici les matchs les plus safe du week-end :")
+        st.dataframe(top_df, use_container_width=True)
 
-            # ---------------------------
-            # 💾 Export CSV
-            # ---------------------------
-            st.download_button(
-                "📥 Télécharger le tableau (CSV)",
-                df.to_csv(index=False).encode("utf-8"),
-                f"matchs_cotes_1_4_1_6_{championnat_nom.replace(' ', '_')}.csv",
-                "text/csv"
-            )
-
-
-
+        st.download_button(
+            "📥 Télécharger les résultats (CSV)",
+            df.to_csv(index=False).encode("utf-8"),
+            "matchs_safe_weekend.csv",
+            "text/csv"
+        )
