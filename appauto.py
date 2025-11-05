@@ -5,7 +5,7 @@ import pandas as pd
 # ---------------------------
 # ⚙️ Configuration API
 # ---------------------------
-API_KEY = "TA_CLE_API_ICI"  # 🔑 Remplace par ta clé TheOddsAPI
+API_KEY = "94ab52893fe364d9bf5362dc7b752213"  # 🔑 Remplace par ta clé TheOddsAPI
 REGION = "eu"               # Marché européen
 MARKET = "h2h"              # Marché : 1X2 (Head to Head)
 
@@ -116,3 +116,4 @@ if st.button("Récupérer les matchs et analyser ⚡"):
             )
 
             st.caption("Analyse basée sur la moyenne et la meilleure cote disponible parmi les bookmakers.")
+
